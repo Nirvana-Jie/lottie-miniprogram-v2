@@ -51,7 +51,6 @@ let rafRequestId = 0;
 type RafTask = {
   callback: FrameRequestCallback;
   fallbackId: ReturnType<typeof setTimeout> | null;
-  dispatchId: ReturnType<typeof setTimeout> | null;
   nativeId: unknown;
   resolved: boolean;
 };
@@ -194,52 +193,33 @@ export function createV2Context(nativeContext: any, canvas: any) {
   });
 }
 
-function runCanvasFrame(requestId: number, timestamp: number) {
+function runCanvasFrame(requestId: number, timestamp: number, cancelNative = false) {
   const task = rafTasks.get(requestId);
   if (!task || task.resolved) {
     return;
   }
 
   task.resolved = true;
+  rafTasks.delete(requestId);
   if (task.fallbackId) {
     clearTimeout(task.fallbackId);
     task.fallbackId = null;
   }
+  // When the 100ms fallback wins, the native frame is still pending -- cancel it
+  // so the host doesn't keep an orphaned registration. (Douyin's native rAF is
+  // confirmed asynchronous on both IDE and device, so the callback can run
+  // directly; no synchronous-recursion guard is needed.)
+  if (
+    cancelNative &&
+    activeCanvas &&
+    task.nativeId !== undefined &&
+    typeof activeCanvas.cancelAnimationFrame === 'function'
+  ) {
+    activeCanvas.cancelAnimationFrame(task.nativeId);
+  }
 
-  rafTasks.delete(requestId);
   if (typeof task.callback === 'function') {
     task.callback(timestamp);
-  }
-}
-
-function deferCanvasFrame(requestId: number, timestamp: number) {
-  const task = rafTasks.get(requestId);
-  if (!task || task.resolved) {
-    return;
-  }
-
-  task.resolved = true;
-  if (task.fallbackId) {
-    clearTimeout(task.fallbackId);
-    task.fallbackId = null;
-  }
-
-  task.dispatchId = setTimeout(() => {
-    if (!rafTasks.has(requestId)) {
-      return;
-    }
-    rafTasks.delete(requestId);
-    if (typeof task.callback === 'function') {
-      task.callback(timestamp);
-    }
-  }, 0);
-}
-
-function dispatchCanvasFrame(requestId: number, timestamp: number, defer: boolean) {
-  if (defer) {
-    deferCanvasFrame(requestId, timestamp);
-  } else {
-    runCanvasFrame(requestId, timestamp);
   }
 }
 
@@ -252,9 +232,6 @@ function cancelCanvasFrame(requestId: number) {
   rafTasks.delete(requestId);
   if (task.fallbackId) {
     clearTimeout(task.fallbackId);
-  }
-  if (task.dispatchId) {
-    clearTimeout(task.dispatchId);
   }
   if (activeCanvas && task.nativeId !== undefined && typeof activeCanvas.cancelAnimationFrame === 'function') {
     activeCanvas.cancelAnimationFrame(task.nativeId);
@@ -294,21 +271,20 @@ export function setup(canvas: any, options: { api?: MiniappApi | null } | null =
     const task: RafTask = {
       callback,
       fallbackId: null,
-      dispatchId: null,
       nativeId: undefined,
       resolved: false,
     };
 
     rafTasks.set(requestId, task);
+    // Race the canvas frame against a 100ms fallback so the loop keeps ticking
+    // even if the host's native rAF stalls; whichever resolves first cancels the
+    // other (the fallback path cancels the still-pending native frame).
     task.fallbackId = setTimeout(() => {
-      dispatchCanvasFrame(requestId, Date.now(), false);
+      runCanvasFrame(requestId, Date.now(), true);
     }, 100);
-
-    let requestingNativeFrame = true;
     task.nativeId = canvas.requestAnimationFrame((timestamp: number) => {
-      dispatchCanvasFrame(requestId, timestamp, requestingNativeFrame);
+      runCanvasFrame(requestId, timestamp);
     });
-    requestingNativeFrame = false;
 
     return requestId;
   };
