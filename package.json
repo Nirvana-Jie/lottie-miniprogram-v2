@@ -2,6 +2,7 @@
   "name": "lottie-miniprogram-v2",
   "version": "0.1.0",
   "description": "Canvas v2 only Lottie player for Douyin and compatible mini programs.",
+  "author": "Nirvana-Jie <1357711537@qq.com>",
   "packageManager": "pnpm@10.33.2",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -15,6 +16,18 @@
       "default": "./lib/index.js"
     },
     "./package.json": "./package.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nirvana-Jie/lottie-miniprogram-v2.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Nirvana-Jie/lottie-miniprogram-v2/issues"
+  },
+  "homepage": "https://github.com/Nirvana-Jie/lottie-miniprogram-v2#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

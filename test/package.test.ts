@@ -7,8 +7,11 @@ const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8
 const readme = fs.readFileSync(path.join(rootDir, 'README.md'), 'utf8');
 const readmeCn = fs.readFileSync(path.join(rootDir, 'README-CN.md'), 'utf8');
 const license = fs.readFileSync(path.join(rootDir, 'LICENSE'), 'utf8');
+const releasingGuide = fs.readFileSync(path.join(rootDir, 'docs/releasing.md'), 'utf8');
 const tsdownConfig = fs.readFileSync(path.join(rootDir, 'tsdown.config.mts'), 'utf8');
 const gitignore = fs.readFileSync(path.join(rootDir, '.gitignore'), 'utf8');
+const ciWorkflow = fs.readFileSync(path.join(rootDir, '.github/workflows/ci.yml'), 'utf8');
+const publishWorkflow = fs.readFileSync(path.join(rootDir, '.github/workflows/publish.yml'), 'utf8');
 
 describe('package contract', () => {
   it('publishes the standard lib output only', () => {
@@ -16,6 +19,17 @@ describe('package contract', () => {
     expect(pkg.types).toBe('lib/index.d.ts');
     expect(pkg.miniprogram).toBeUndefined();
     expect(pkg.files).toEqual(['lib']);
+    expect(pkg.author).toBe('Nirvana-Jie <1357711537@qq.com>');
+    expect(pkg.repository).toEqual({
+      type: 'git',
+      url: 'git+https://github.com/Nirvana-Jie/lottie-miniprogram-v2.git',
+    });
+    expect(pkg.bugs.url).toBe('https://github.com/Nirvana-Jie/lottie-miniprogram-v2/issues');
+    expect(pkg.homepage).toBe('https://github.com/Nirvana-Jie/lottie-miniprogram-v2#readme');
+    expect(pkg.publishConfig).toEqual({
+      access: 'public',
+      registry: 'https://registry.npmjs.org/',
+    });
     expect(gitignore).toContain('lib/');
     expect(JSON.stringify(pkg.exports)).not.toContain('miniprogram_dist');
     expect(JSON.stringify(pkg.scripts)).not.toContain('prepare-entry');
@@ -60,6 +74,18 @@ describe('package contract', () => {
     expect(pkg.devDependencies['lottie-web']).toBe('5.7.4');
   });
 
+  it('defines GitHub Actions verification and npm publish workflows', () => {
+    expect(ciWorkflow).toContain('pnpm run verify');
+    expect(ciWorkflow).toContain('npm pack --dry-run');
+    expect(ciWorkflow).toContain('corepack prepare pnpm@10.33.2 --activate');
+    expect(publishWorkflow).toContain('id-token: write');
+    expect(publishWorkflow).toContain('registry-url: https://registry.npmjs.org');
+    expect(publishWorkflow).toContain('pnpm run verify');
+    expect(publishWorkflow).toContain('npm view "${package_name}@${package_version}" version');
+    expect(publishWorkflow).toContain('npm publish --access public');
+    expect(publishWorkflow).toContain('NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}');
+  });
+
   it('documents Canvas v2 only support and the removed Canvas v1 path', () => {
     expect(readme).toContain('Canvas v2 only');
     expect(readme).toContain('## Support');
@@ -83,6 +109,9 @@ describe('package contract', () => {
     expect(readmeCn).not.toContain('pnpm run build');
     expect(readmeCn).not.toContain('packageManager:');
     expect(readmeCn).not.toContain('## English');
+    expect(releasingGuide).toContain('Trusted Publishing');
+    expect(releasingGuide).toContain('NPM_TOKEN');
+    expect(releasingGuide).toContain('git+https://github.com/Nirvana-Jie/lottie-miniprogram-v2.git');
   });
 
   it('documents upstream origin and license notices', () => {
