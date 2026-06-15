@@ -75,6 +75,6 @@ export default defineConfig({
   platform: 'neutral',
   plugins: [lottieCanvasPlugin()],
   sourcemap: false,
-  target: 'es2018',
+  target: ['chrome112', 'safari12'],
   treeshake: true,
 });

@@ -58,6 +58,7 @@ describe('package contract', () => {
   });
 
   it('configures tsdown for smaller production output', () => {
+    expect(tsdownConfig).toContain("target: ['chrome112', 'safari12']");
     expect(tsdownConfig).toContain('minify: true');
     expect(tsdownConfig).toContain('treeshake: true');
     expect(tsdownConfig).toContain('copy:');
