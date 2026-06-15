@@ -278,16 +278,16 @@ describe('Canvas v2 adapter', () => {
     expect(g.window.devicePixelRatio).toBe(1);
   });
 
-  it('defers Canvas RAF callbacks to avoid synchronous recursion from native events', () => {
+  it('dispatches the callback when the native frame fires', () => {
     vi.useFakeTimers();
     const nativeContext = {};
-    let nativeCallCount = 0;
     const canvas = {
       getContext: () => nativeContext,
+      // Native rAF fires its callback (Douyin confirmed: always async, but the
+      // adapter treats sync/async uniformly).
       requestAnimationFrame: (callback: FrameRequestCallback) => {
-        nativeCallCount += 1;
         callback(24);
-        return 100 + nativeCallCount;
+        return 1;
       },
       cancelAnimationFrame: vi.fn(),
     };
@@ -298,16 +298,31 @@ describe('Canvas v2 adapter', () => {
     const requestId = g.window.requestAnimationFrame(callback);
 
     expect(typeof requestId).toBe('number');
-    expect(nativeCallCount).toBe(1);
-    expect(callback).not.toHaveBeenCalled();
-
-    vi.runOnlyPendingTimers();
-
     expect(callback).toHaveBeenCalledOnce();
     expect(callback).toHaveBeenCalledWith(24);
   });
 
-  it('does not add an extra timer hop for asynchronous Canvas RAF callbacks', () => {
+  it('cancels the pending native frame when the 100ms fallback wins', () => {
+    vi.useFakeTimers();
+    const nativeContext = {};
+    const canvas = {
+      getContext: () => nativeContext,
+      // Native frame never fires (e.g. backgrounded / janky webview).
+      requestAnimationFrame: () => 7,
+      cancelAnimationFrame: vi.fn(),
+    };
+
+    setup(canvas);
+
+    const callback = vi.fn();
+    g.window.requestAnimationFrame(callback);
+    vi.advanceTimersByTime(100);
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(canvas.cancelAnimationFrame).toHaveBeenCalledWith(7);
+  });
+
+  it('does not dispatch twice when the native frame fires after the fallback', () => {
     vi.useFakeTimers();
     const nativeContext = {};
     let nativeCallback: FrameRequestCallback | undefined;
@@ -324,19 +339,20 @@ describe('Canvas v2 adapter', () => {
 
     const callback = vi.fn();
     g.window.requestAnimationFrame(callback);
-    nativeCallback?.(72);
+    vi.advanceTimersByTime(100); // fallback wins
+    nativeCallback?.(72); // late native frame must be ignored
 
-    expect(callback).toHaveBeenCalledOnce();
-    expect(callback).toHaveBeenCalledWith(72);
+    expect(callback).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels deferred Canvas RAF callbacks', () => {
+  it('cancels a pending frame and its native handle', () => {
     vi.useFakeTimers();
     const nativeContext = {};
+    let nativeCallback: FrameRequestCallback | undefined;
     const canvas = {
       getContext: () => nativeContext,
       requestAnimationFrame: (callback: FrameRequestCallback) => {
-        callback(48);
+        nativeCallback = callback;
         return 7;
       },
       cancelAnimationFrame: vi.fn(),
@@ -347,7 +363,8 @@ describe('Canvas v2 adapter', () => {
     const callback = vi.fn();
     const requestId = g.window.requestAnimationFrame(callback);
     g.window.cancelAnimationFrame(requestId);
-    vi.runOnlyPendingTimers();
+    vi.advanceTimersByTime(100);
+    nativeCallback?.(48);
 
     expect(callback).not.toHaveBeenCalled();
     expect(canvas.cancelAnimationFrame).toHaveBeenCalledWith(7);
