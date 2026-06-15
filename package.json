@@ -1,0 +1,43 @@
+{
+  "name": "lottie-miniprogram-v2",
+  "version": "0.1.0",
+  "description": "Canvas v2 only Lottie player for Douyin and compatible mini programs.",
+  "packageManager": "pnpm@10.33.2",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "require": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsdown",
+    "test": "vitest run",
+    "size": "node scripts/check-size.cjs",
+    "verify": "pnpm run typecheck && pnpm run build && pnpm test && pnpm run size"
+  },
+  "keywords": [
+    "lottie",
+    "miniprogram",
+    "douyin",
+    "canvas-v2"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.21",
+    "lottie-web": "5.7.4",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
