@@ -54,6 +54,16 @@ export interface SetupOptions {
 }
 
 declare const lottie: {
+  /**
+   * Prepare the environment for a Canvas v2 node. Call once after obtaining the
+   * node from a selector query, before `loadAnimation`.
+   *
+   * The return value is a renderer facade: a `CanvasRenderingContext2D`-compatible
+   * Proxy wrapping the node's native 2d context (it sanitizes `setLineDash`/`fill`
+   * and never mutates the native context). It is NOT reference-equal to
+   * `canvas.getContext('2d')`. You can keep passing the native context to
+   * `loadAnimation` — the library reuses this same facade internally.
+   */
   setup(canvas: any, options?: SetupOptions | null): CanvasRenderingContext2D;
   loadAnimation(options: LoadAnimationParameter): LoadAnimationReturnType;
   freeze(): void;

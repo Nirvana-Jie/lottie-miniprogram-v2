@@ -24,6 +24,7 @@ describe('runtime API', () => {
         createV2Context: vi.fn(),
         getActiveCanvas: () => null,
         getActiveContext: () => null,
+        getActiveNativeContext: () => null,
         restore: vi.fn(),
       },
     );
@@ -60,6 +61,7 @@ describe('runtime API', () => {
       createV2Context: vi.fn(() => wrappedContext),
       getActiveCanvas: () => activeCanvas,
       getActiveContext: () => null,
+      getActiveNativeContext: () => null,
       restore,
     } as any);
 
@@ -106,12 +108,52 @@ describe('runtime API', () => {
       createV2Context,
       getActiveCanvas: () => activeCanvas,
       getActiveContext: () => activeContext,
+      getActiveNativeContext: () => null,
       restore: vi.fn(),
     } as any);
 
     api.loadAnimation({
       animationData: {},
       rendererSettings: { context: activeContext },
+    });
+
+    expect(createV2Context).not.toHaveBeenCalled();
+    expect(engine.loadAnimation).toHaveBeenCalledWith({
+      animationData: {},
+      renderer: 'canvas',
+      rendererSettings: { context: activeContext },
+    });
+  });
+
+  it('reuses the setup facade when the caller passes the active native context', () => {
+    const activeCanvas = {};
+    const activeNativeContext = {};
+    const activeContext = {};
+    const engine = {
+      loadAnimation: vi.fn(() => ({
+        destroy: vi.fn(),
+        renderer: {
+          destroyed: false,
+          renderConfig: {
+            clearCanvas: true,
+          },
+        },
+      })),
+    };
+    const createV2Context = vi.fn();
+
+    const api = createLottieApi(engine, {
+      setup: vi.fn(),
+      createV2Context,
+      getActiveCanvas: () => activeCanvas,
+      getActiveContext: () => activeContext,
+      getActiveNativeContext: () => activeNativeContext,
+      restore: vi.fn(),
+    } as any);
+
+    api.loadAnimation({
+      animationData: {},
+      rendererSettings: { context: activeNativeContext },
     });
 
     expect(createV2Context).not.toHaveBeenCalled();

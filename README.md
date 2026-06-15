@@ -17,6 +17,7 @@ This project originates from and references [`wechat-miniprogram/lottie-miniprog
 - Local `animationData`.
 - Remote `path` values that use `http` or `https`.
 - Common canvas renderer options such as `loop`, `autoplay`, `clearCanvas`, and `rendererSettings.context`.
+- Canvas fill-rule arguments, including `evenodd`, forwarded to the native context.
 
 ## Not Supported
 
@@ -24,7 +25,6 @@ This project originates from and references [`wechat-miniprogram/lottie-miniprog
 - Browser DOM options such as `wrapper` or `container`.
 - Non-http(s) `path` values.
 - Lottie expressions in mini program runtime.
-- Exact `evenodd` fill-rule rendering. `fill(rule)` arguments are intentionally ignored to match upstream mini program compatibility and avoid legacy iOS WeChat crashes.
 - `miniprogram_dist`; this package uses standard `lib` package output.
 
 ## Installation

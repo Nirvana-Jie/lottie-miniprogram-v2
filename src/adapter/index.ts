@@ -44,6 +44,7 @@ g.XMLHttpRequest = MiniappXMLHttpRequest;
 
 let activeCanvas: any = null;
 let activeContext: any = null;
+let activeNativeContext: any = null;
 let previousState: any = null;
 let rafRequestId = 0;
 
@@ -56,7 +57,6 @@ type RafTask = {
 };
 
 const rafTasks = new Map<number, RafTask>();
-const patchedNativeContexts = new WeakSet<object>();
 
 function notSupportImageOperation() {
   console.error('Miniapp Canvas v2 does not support dynamic offscreen canvas creation for lottie image preprocessing.');
@@ -103,6 +103,28 @@ export function createElement(tagName: string) {
   return {};
 }
 
+/**
+ * Normalize lottie's dash segments to a plain `number[]`.
+ *
+ * lottie passes a `Float32Array` (createTypedArray('float32', ...)). Miniapp
+ * bridges (e.g. Douyin's worker<->webview) only let a plain Array survive as an
+ * iterable, so the strict native `setLineDash` throws on a typed/array-like
+ * argument. We therefore always hand the native context a plain `number[]`.
+ *
+ * Contract: null/undefined -> []; plain array, typed array, and array-like are
+ * converted element-wise to numbers; a hostile/throwing iterator falls back to [].
+ */
+export function normalizeLineDashSegments(segments: unknown): number[] {
+  if (segments == null) {
+    return [];
+  }
+  try {
+    return Array.from(segments as Iterable<unknown>, (value) => Number(value));
+  } catch {
+    return [];
+  }
+}
+
 export function createV2Context(nativeContext: any, canvas: any) {
   if (!nativeContext || typeof nativeContext !== 'object') {
     throw new Error('rendererSettings.context should be a Canvas v2 2d context.');
@@ -111,53 +133,65 @@ export function createV2Context(nativeContext: any, canvas: any) {
     throw new Error('setup(canvas) requires a Canvas v2 node.');
   }
 
-  if (!nativeContext.canvas) {
-    try {
-      nativeContext.canvas = canvas;
-    } catch {}
-  }
+  // We never mutate the caller's native context. lottie-web is handed a facade we
+  // own, so our setLineDash/fill sanitizers always run -- even when the host
+  // context's methods are non-writable (e.g. Douyin's worker<->webview bridge,
+  // where an in-place patch silently fails and the native methods get hit raw).
+  // The facade has a null prototype so `in`/`has` never leak Object.prototype
+  // members, and bound native methods are cached so hot paths cost one Map.get.
+  const boundMethodCache = new Map<PropertyKey, Function>();
 
-  if (!nativeContext.canvas) {
-    throw new Error('Canvas v2 context must expose context.canvas for lottie-web canvas renderer.');
-  }
-
-  patchNativeContextMethods(nativeContext);
-
-  return nativeContext;
-}
-
-function patchNativeContextMethods(nativeContext: any) {
-  if (patchedNativeContexts.has(nativeContext)) {
-    return;
-  }
-
-  let patched = true;
-  const nativeFill = nativeContext.fill;
-  if (typeof nativeFill === 'function') {
-    try {
-      // Match upstream mini program behavior: ignore fill-rule arguments to avoid legacy iOS WeChat crashes.
-      nativeContext.fill = function fill() {
-        return nativeFill.call(nativeContext);
-      };
-    } catch {
-      patched = false;
+  const facade: any = Object.create(null);
+  facade.canvas = nativeContext.canvas || canvas;
+  // Forward the fill rule: lottie passes a valid 'nonzero'/'evenodd' string
+  // (currentStyle.r), a bridge-safe primitive, so even-odd fills render correctly.
+  // (Legacy iOS WeChat needed the rule dropped; the Douyin v2 target does not.)
+  facade.fill = function fill(rule?: CanvasFillRule) {
+    if (typeof nativeContext.fill !== 'function') {
+      return undefined;
     }
-  }
-
-  const nativeSetLineDash = nativeContext.setLineDash;
-  if (typeof nativeSetLineDash === 'function') {
-    try {
-      nativeContext.setLineDash = function setLineDash(segments: Iterable<unknown>) {
-        return nativeSetLineDash.call(nativeContext, Array.from(segments || []).map(Number));
-      };
-    } catch {
-      patched = false;
+    return rule ? nativeContext.fill(rule) : nativeContext.fill();
+  };
+  // Coerce dashes to a plain number array: lottie passes a Float32Array
+  // (createTypedArray('float32', ...)) which does not survive the miniapp bridge
+  // as an iterable, so the strict native setLineDash would throw.
+  facade.setLineDash = function setLineDash(segments: unknown) {
+    if (typeof nativeContext.setLineDash !== 'function') {
+      return undefined;
     }
-  }
+    return nativeContext.setLineDash(normalizeLineDashSegments(segments));
+  };
 
-  if (patched) {
-    patchedNativeContexts.add(nativeContext);
-  }
+  return new Proxy(facade, {
+    get(target, property) {
+      const cached = boundMethodCache.get(property);
+      if (cached) {
+        return cached;
+      }
+      if (property in target) {
+        return target[property];
+      }
+
+      const value = nativeContext[property as keyof typeof nativeContext];
+      if (typeof value === 'function') {
+        const bound = (value as Function).bind(nativeContext);
+        boundMethodCache.set(property, bound);
+        return bound;
+      }
+      return value;
+    },
+    set(target, property, value) {
+      if (property === 'canvas') {
+        target[property] = value;
+      } else {
+        nativeContext[property as keyof typeof nativeContext] = value;
+      }
+      return true;
+    },
+    has(target, property) {
+      return property in target || property in nativeContext;
+    },
+  });
 }
 
 function runCanvasFrame(requestId: number, timestamp: number) {
@@ -245,6 +279,7 @@ export function setup(canvas: any, options: { api?: MiniappApi | null } | null =
 
   const nativeContext = canvas.getContext('2d');
   activeCanvas = canvas;
+  activeNativeContext = nativeContext;
   activeContext = createV2Context(nativeContext, canvas);
 
   previousState = {
@@ -294,6 +329,7 @@ export function restore() {
   }
   activeCanvas = null;
   activeContext = null;
+  activeNativeContext = null;
   previousState = null;
   setMiniappApi(null);
   g.window.devicePixelRatio = getPixelRatio();
@@ -305,4 +341,8 @@ export function getActiveCanvas() {
 
 export function getActiveContext() {
   return activeContext;
+}
+
+export function getActiveNativeContext() {
+  return activeNativeContext;
 }

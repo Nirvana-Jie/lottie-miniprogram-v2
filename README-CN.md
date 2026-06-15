@@ -17,6 +17,7 @@
 - 本地 `animationData`。
 - 使用 `http` 或 `https` 的远程 `path`。
 - 常见 canvas renderer 配置，例如 `loop`、`autoplay`、`clearCanvas` 和 `rendererSettings.context`。
+- canvas 填充规则参数（含 `evenodd`），会转发给原生 context。
 
 ## 不支持
 
@@ -24,7 +25,6 @@
 - `wrapper` 或 `container` 等浏览器 DOM 参数。
 - 非 http(s) 的 `path`。
 - 小程序运行时里的 Lottie expression。
-- 精确的 `evenodd` 填充规则渲染。为保持上游小程序兼容策略并规避老 iOS 微信崩溃，`fill(rule)` 的参数会被有意忽略。
 - 不包含 `miniprogram_dist`；本包使用标准 `lib` 包产物。
 
 ## 安装
