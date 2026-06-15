@@ -2,6 +2,7 @@ export interface Adapter {
   createV2Context(nativeContext: unknown, canvas: unknown): unknown;
   getActiveCanvas(): unknown;
   getActiveContext(): unknown;
+  getActiveNativeContext(): unknown;
   restore(): void;
 }
 
@@ -37,10 +38,11 @@ export function createLottieApi(engine: LottieEngine, adapter: Adapter) {
 
     const activeCanvas = adapter.getActiveCanvas();
     const activeContext = adapter.getActiveContext();
+    const passedContext = options.rendererSettings.context;
     const context =
-      options.rendererSettings.context === activeContext
+      passedContext === activeContext || passedContext === adapter.getActiveNativeContext()
         ? activeContext
-        : adapter.createV2Context(options.rendererSettings.context, activeCanvas);
+        : adapter.createV2Context(passedContext, activeCanvas);
     const rendererSettings = {
       ...options.rendererSettings,
       context,

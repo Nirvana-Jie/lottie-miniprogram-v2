@@ -98,6 +98,98 @@ const shapeTrimAnimation = {
   ],
 };
 
+const dashedStrokeAnimation = {
+  v: '5.7.4',
+  fr: 60,
+  ip: 0,
+  op: 90,
+  w: 128,
+  h: 128,
+  nm: 'dashed_stroke_smoke',
+  ddd: 0,
+  assets: [],
+  layers: [
+    {
+      ddd: 0,
+      ind: 1,
+      ty: 4,
+      nm: 'dashed stroke layer',
+      sr: 1,
+      ks: {
+        o: { a: 0, k: 100 },
+        r: { a: 0, k: 0 },
+        p: { a: 0, k: [64, 64, 0] },
+        a: { a: 0, k: [0, 0, 0] },
+        s: { a: 0, k: [100, 100, 100] },
+      },
+      ao: 0,
+      shapes: [
+        {
+          ty: 'gr',
+          nm: 'line group',
+          it: [
+            {
+              ty: 'sh',
+              nm: 'line',
+              ind: 0,
+              ks: {
+                a: 0,
+                k: {
+                  i: [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                  ],
+                  o: [
+                    [0, 0],
+                    [0, 0],
+                    [0, 0],
+                  ],
+                  v: [
+                    [-32, 0],
+                    [0, 32],
+                    [42, -24],
+                  ],
+                  c: false,
+                },
+              },
+            },
+            {
+              ty: 'st',
+              nm: 'dashed stroke',
+              c: { a: 0, k: [1, 1, 1, 1] },
+              o: { a: 0, k: 100 },
+              w: { a: 0, k: 12 },
+              lc: 2,
+              lj: 2,
+              ml: 4,
+              bm: 0,
+              d: [
+                { n: 'd', nm: 'dash', v: { a: 0, k: 8 } },
+                { n: 'g', nm: 'gap', v: { a: 0, k: 4 } },
+                { n: 'o', nm: 'offset', v: { a: 0, k: 0 } },
+              ],
+            },
+            {
+              ty: 'tr',
+              nm: 'transform',
+              p: { a: 0, k: [0, 0] },
+              a: { a: 0, k: [0, 0] },
+              s: { a: 0, k: [100, 100] },
+              r: { a: 0, k: 0 },
+              o: { a: 0, k: 100 },
+            },
+          ],
+        },
+      ],
+      ip: 0,
+      op: 90,
+      st: 0,
+      bm: 0,
+    },
+  ],
+};
+
 const gradientAnimation = {
   v: '5.7.4',
   fr: 60,
@@ -456,13 +548,13 @@ const vectorTextAnimation = {
   ],
 };
 
-function createCanvasHarness() {
+function createCanvasHarness(overrides: { setLineDash?: (segments: unknown) => void } = {}) {
   const calls: string[] = [];
   let imageIndex = 0;
   const nativeContext = new Proxy(
     {
       canvas: null as any,
-      setLineDash() {},
+      setLineDash: overrides.setLineDash ?? function setLineDash() {},
       measureText() {
         return { width: 0 };
       },
@@ -496,7 +588,7 @@ function createCanvasHarness() {
   const canvas = {
     width: 128,
     height: 128,
-    getContext() {
+    getContext(_type?: string) {
       return nativeContext;
     },
     requestAnimationFrame() {
@@ -589,5 +681,54 @@ describe('built renderer', () => {
 
     expect(calls).toContain('fill');
     expect(calls).toContain('moveTo');
+  });
+
+  it('passes a plain number array to a strict native setLineDash for a built dashed stroke', async () => {
+    const lottie = require('../lib');
+    const dashCalls: unknown[] = [];
+    const harness = createCanvasHarness({
+      setLineDash(segments: unknown) {
+        dashCalls.push(segments);
+        // Model the Douyin/TMA bridge: only a plain Array survives as an iterable,
+        // and the strict native setLineDash rejects a typed/array-like argument.
+        if (segments == null || typeof (segments as any)[Symbol.iterator] !== 'function') {
+          throw new TypeError(
+            "Failed to execute 'setLineDash' on 'CanvasRenderingContext2D': The object must have a callable @@iterator property.",
+          );
+        }
+        if (!Array.isArray(segments)) {
+          throw new TypeError(
+            "Failed to execute 'setLineDash' on 'CanvasRenderingContext2D': a non-plain dash array was rejected by the bridge.",
+          );
+        }
+      },
+    });
+
+    lottie.setup(harness.canvas);
+    // Public usage: pass the raw 2d context exactly like the README example.
+    const animation = lottie.loadAnimation({
+      loop: false,
+      autoplay: false,
+      animationData: dashedStrokeAnimation,
+      rendererSettings: {
+        context: harness.canvas.getContext('2d'),
+        clearCanvas: true,
+      },
+    });
+
+    await new Promise((resolve) => {
+      animation.addEventListener('DOMLoaded', resolve);
+      setTimeout(resolve, 30);
+    });
+
+    expect(() => animation.goToAndStop(10, true)).not.toThrow();
+    expect(dashCalls.length).toBeGreaterThan(0);
+    for (const received of dashCalls) {
+      expect(Array.isArray(received)).toBe(true);
+      expect(received instanceof Float32Array).toBe(false);
+      expect((received as unknown[]).every((value) => typeof value === 'number' && Number.isFinite(value))).toBe(true);
+    }
+
+    animation.destroy();
   });
 });
