@@ -50,7 +50,6 @@ let rafRequestId = 0;
 
 type RafTask = {
   callback: FrameRequestCallback;
-  fallbackId: ReturnType<typeof setTimeout> | null;
   nativeId: unknown;
   resolved: boolean;
 };
@@ -193,7 +192,7 @@ export function createV2Context(nativeContext: any, canvas: any) {
   });
 }
 
-function runCanvasFrame(requestId: number, timestamp: number, cancelNative = false) {
+function runCanvasFrame(requestId: number, timestamp: number) {
   const task = rafTasks.get(requestId);
   if (!task || task.resolved) {
     return;
@@ -201,23 +200,6 @@ function runCanvasFrame(requestId: number, timestamp: number, cancelNative = fal
 
   task.resolved = true;
   rafTasks.delete(requestId);
-  if (task.fallbackId) {
-    clearTimeout(task.fallbackId);
-    task.fallbackId = null;
-  }
-  // When the 100ms fallback wins, the native frame is still pending -- cancel it
-  // so the host doesn't keep an orphaned registration. (Douyin's native rAF is
-  // confirmed asynchronous on both IDE and device, so the callback can run
-  // directly; no synchronous-recursion guard is needed.)
-  if (
-    cancelNative &&
-    activeCanvas &&
-    task.nativeId !== undefined &&
-    typeof activeCanvas.cancelAnimationFrame === 'function'
-  ) {
-    activeCanvas.cancelAnimationFrame(task.nativeId);
-  }
-
   if (typeof task.callback === 'function') {
     task.callback(timestamp);
   }
@@ -230,9 +212,6 @@ function cancelCanvasFrame(requestId: number) {
   }
 
   rafTasks.delete(requestId);
-  if (task.fallbackId) {
-    clearTimeout(task.fallbackId);
-  }
   if (activeCanvas && task.nativeId !== undefined && typeof activeCanvas.cancelAnimationFrame === 'function') {
     activeCanvas.cancelAnimationFrame(task.nativeId);
   }
@@ -270,18 +249,16 @@ export function setup(canvas: any, options: { api?: MiniappApi | null } | null =
     const requestId = ++rafRequestId;
     const task: RafTask = {
       callback,
-      fallbackId: null,
       nativeId: undefined,
       resolved: false,
     };
 
     rafTasks.set(requestId, task);
-    // Race the canvas frame against a 100ms fallback so the loop keeps ticking
-    // even if the host's native rAF stalls; whichever resolves first cancels the
-    // other (the fallback path cancels the still-pending native frame).
-    task.fallbackId = setTimeout(() => {
-      runCanvasFrame(requestId, Date.now(), true);
-    }, 100);
+    // Drive purely off the canvas frame clock -- NO setTimeout fallback. The host
+    // throttles canvas.requestAnimationFrame when the canvas is offscreen; relying
+    // on it alone means the animation correctly PAUSES while offscreen, rather than
+    // a timer keeping lottie producing canvas orders that the offscreen webview
+    // can't drain (which accumulate unbounded and overflow the bridge on return).
     task.nativeId = canvas.requestAnimationFrame((timestamp: number) => {
       runCanvasFrame(requestId, timestamp);
     });

@@ -302,12 +302,15 @@ describe('Canvas v2 adapter', () => {
     expect(callback).toHaveBeenCalledWith(24);
   });
 
-  it('cancels the pending native frame when the 100ms fallback wins', () => {
+  it('does not run the callback when the native frame never fires (no fallback)', () => {
     vi.useFakeTimers();
     const nativeContext = {};
     const canvas = {
       getContext: () => nativeContext,
-      // Native frame never fires (e.g. backgrounded / janky webview).
+      // Native frame never fires (e.g. the canvas is offscreen and the host
+      // throttles its rAF). With no setTimeout fallback, the animation simply
+      // pauses -- it must NOT keep ticking (otherwise it keeps producing canvas
+      // orders the offscreen webview can't drain, which accumulate unbounded).
       requestAnimationFrame: () => 7,
       cancelAnimationFrame: vi.fn(),
     };
@@ -316,33 +319,9 @@ describe('Canvas v2 adapter', () => {
 
     const callback = vi.fn();
     g.window.requestAnimationFrame(callback);
-    vi.advanceTimersByTime(100);
+    vi.advanceTimersByTime(1000);
 
-    expect(callback).toHaveBeenCalledOnce();
-    expect(canvas.cancelAnimationFrame).toHaveBeenCalledWith(7);
-  });
-
-  it('does not dispatch twice when the native frame fires after the fallback', () => {
-    vi.useFakeTimers();
-    const nativeContext = {};
-    let nativeCallback: FrameRequestCallback | undefined;
-    const canvas = {
-      getContext: () => nativeContext,
-      requestAnimationFrame: (callback: FrameRequestCallback) => {
-        nativeCallback = callback;
-        return 7;
-      },
-      cancelAnimationFrame: vi.fn(),
-    };
-
-    setup(canvas);
-
-    const callback = vi.fn();
-    g.window.requestAnimationFrame(callback);
-    vi.advanceTimersByTime(100); // fallback wins
-    nativeCallback?.(72); // late native frame must be ignored
-
-    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).not.toHaveBeenCalled();
   });
 
   it('cancels a pending frame and its native handle', () => {
