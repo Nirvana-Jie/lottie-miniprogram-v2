@@ -1,6 +1,6 @@
 {
   "name": "lottie-miniprogram-v2",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Canvas v2 only Lottie player for Douyin and compatible mini programs.",
   "author": "Nirvana-Jie",
   "packageManager": "pnpm@10.33.2",
